@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isSelf(uid) { return signedIn() && request.auth.uid == uid; }
+    function ownsStore(storeId) { return isSelf(storeId); }
+    function publicStore(storeId) {
+      return exists(/databases/$(database)/documents/stores/$(storeId))
+        && get(/databases/$(database)/documents/stores/$(storeId)).data.catalogPublic == true;
+    }
+
+    // Perfil privado de la cuenta. Cada usuario solo puede acceder a su propio perfil.
+    match /users/{uid} {
+      allow read, create, update, delete: if isSelf(uid);
+    }
+
+    // El UID de Authentication ES el identificador de la tienda.
+    // Por eso cada negocio queda aislado automáticamente.
+    match /stores/{storeId} {
+      allow create: if ownsStore(storeId) && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if ownsStore(storeId) && request.resource.data.ownerUid == request.auth.uid;
+      allow delete: if ownsStore(storeId);
+      allow get: if ownsStore(storeId) || resource.data.catalogPublic == true;
+      allow list: if resource.data.catalogPublic == true;
+
+      match /products/{id} { allow read: if ownsStore(storeId) || publicStore(storeId); allow write: if ownsStore(storeId); }
+      match /documents/{id} { allow read, write: if ownsStore(storeId); }
+      match /customers/{id} { allow read, write: if ownsStore(storeId); }
+      match /sales/{id} { allow read, write: if ownsStore(storeId); }
+      match /purchases/{id} { allow read, write: if ownsStore(storeId); }
+      match /expenses/{id} { allow read, write: if ownsStore(storeId); }
+      match /inventoryMovements/{id} { allow read, write: if ownsStore(storeId); }
+    }
+  }
+}
